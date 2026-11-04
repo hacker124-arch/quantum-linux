@@ -1,0 +1,9 @@
+/cache/
+/chroot/
+/binary/
+/.build/
+/*.iso
+/*.img
+/*.contents
+/*.packages
+/*.manifest
