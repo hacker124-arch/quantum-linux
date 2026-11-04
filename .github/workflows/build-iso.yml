@@ -1,3 +1,4 @@
+```yaml
 name: Build Quantum Linux ISO
 
 on:
@@ -8,13 +9,14 @@ on:
     paths:
       - "auto/**"
       - "config/**"
-      - ".github/workflows/**"
+      - ".github/workflows/build-iso.yml"
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build Quantum Linux
     runs-on: ubuntu-24.04
     timeout-minutes: 360
 
@@ -23,7 +25,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install build dependencies
+        shell: bash
         run: |
+          set -e
           sudo apt-get update
           sudo apt-get install -y \
             live-build \
@@ -39,39 +43,62 @@ jobs:
             wget \
             git
 
-      - name: Fix Debian Trixie configuration
+      - name: Validate Quantum Linux configuration
         shell: bash
         run: |
           set -e
 
-          # Remove the invalid normal-package entry.
-          if [ -f config/package-lists/quantum.list.chroot ]; then
-            sed -i '/^[[:space:]]*live-installer[[:space:]]*$/d' \
-              config/package-lists/quantum.list.chroot
-          fi
+          test -f auto/config
+          test -f config/package-lists/quantum.list.chroot
 
-          # Prevent older live-build from generating trixie/updates.
-          if [ -f auto/config ]; then
-            sed -i '/^[[:space:]]*lb config/ s/$/ --security false/' auto/config
-          fi
+          echo "Checking Debian Trixie configuration..."
+          grep -q -- "--distribution trixie" auto/config
 
-          echo "Configuration patch completed."
+          # Remove live-installer if present:
+          # it is not a normal desktop package.
+          sed -i '/^[[:space:]]*live-installer[[:space:]]*$/d' \
+            config/package-lists/quantum.list.chroot
 
-      - name: Build Quantum Linux ISO
+      - name: Clean previous build
         shell: bash
         run: |
-          set -e
           sudo lb clean --purge || true
-          sudo lb config
+
+      - name: Configure Debian Trixie Live Build
+        shell: bash
+        run: |
+          set -e
+
+          sudo lb config noauto \
+            --mode debian \
+            --distribution trixie \
+            --architectures amd64 \
+            --binary-images iso-hybrid \
+            --archive-areas "main contrib non-free-firmware" \
+            --apt-recommends false \
+            --apt-options "--yes -oAcquire::Retries=3" \
+            --security false \
+            --iso-application "Quantum Linux" \
+            --iso-volume "QUANTUM_LINUX" \
+            --bootappend-live "boot=live components quiet splash"
+
+      - name: Build ISO
+        shell: bash
+        run: |
+          set -e
           sudo lb build
 
-      - name: Upload ISO artifact
+      - name: List generated ISO files
+        if: always()
+        shell: bash
+        run: |
+          find . -maxdepth 2 -type f -name "*.iso" -ls || true
+
+      - name: Upload Quantum Linux ISO
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: quantum-linux-iso
-          path: |
-            *.iso
-            live-image-*.iso
+          name: Quantum-Linux-ISO
+          path: "*.iso"
           if-no-files-found: error
           retention-days: 7
