@@ -1,27 +1,27 @@
-# Minimal KDE Plasma 6 desktop and Wayland session
+# Quantum Linux - Debian 13 Trixie / KDE Plasma 6
+# Full Plasma desktop with its Wayland session.
+# In Trixie, use plasma-workspace; plasma-workspace-wayland is not available.
 kde-plasma-desktop
-plasma-workspace-wayland
+plasma-workspace
+kwin-wayland
 sddm
+xwayland
+dbus-user-session
+
+# KDE applications and desktop integration
 konsole
 dolphin
 ark
 kate
 systemsettings
 kde-config-gtk-style
+plasma-nm
+plasma-pa
 xdg-desktop-portal
 xdg-desktop-portal-kde
 
-# Audio, screen capture and OBS
-pipewire
-pipewire-audio
-wireplumber
-pipewire-pulse
-obs-studio
-v4l2loopback-dkms
-
-# Firmware, networking and useful base tools
+# Network and system utilities
 network-manager
-network-manager-gnome
 sudo
 curl
 ca-certificates
@@ -31,9 +31,20 @@ usbutils
 pciutils
 udisks2
 upower
+systemd-timesyncd
+
+# Common laptop firmware
+firmware-linux
+firmware-misc-nonfree
+
+# Audio, screen capture and streaming
+pipewire
+pipewire-audio
+wireplumber
+pipewire-pulse
+obs-studio
+v4l2loopback-dkms
+
+# Fonts
 fonts-noto
 fonts-noto-color-emoji
-
-# Installer support
-live-installer
-tasksel

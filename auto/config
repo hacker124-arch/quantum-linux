@@ -7,9 +7,9 @@ lb config noauto \
   --architectures amd64 \
   --binary-images iso-hybrid \
   --debian-installer live \
-  --archive-areas "main contrib non-free-firmware" \
-  --apt-recommends false \
-  --apt-options "--yes -oAcquire::Retries=3" \
+  --archive-areas "main contrib non-free non-free-firmware" \
+  --apt-recommends true \
+  --apt-options "--yes -oAcquire::Retries=5 -oAcquire::http::Timeout=30" \
   --iso-application "Quantum Linux" \
   --iso-volume "QUANTUM_LINUX" \
   --bootappend-live "boot=live components quiet splash"
