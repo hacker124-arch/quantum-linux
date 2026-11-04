@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+# Install Waydroid from Debian 13 backports, as documented by Waydroid.
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y -t trixie-backports waydroid || {
+  echo "WARNING: Waydroid could not be installed in this build; install it later from trixie-backports." >&2
+}
+
+# Add Helium's official Debian repository using its published signing key.
+install -d -m 0755 /usr/share/keyrings
+curl -fsSL https://raw.githubusercontent.com/imputnet/helium-linux/main/pubkey.asc \
+  | gpg --dearmor --yes -o /usr/share/keyrings/helium.gpg
+chmod 0644 /usr/share/keyrings/helium.gpg
+printf '%s\n' 'deb [arch=amd64 signed-by=/usr/share/keyrings/helium.gpg] https://pkg.helium.computer/deb stable main' \
+  > /etc/apt/sources.list.d/helium.list
+apt-get update
+DEBIAN_FRONTEND=noninteractive apt-get install -y helium-bin || {
+  echo "WARNING: Helium installation failed; install it later from the official repository." >&2
+}
+
+apt-get clean
+rm -rf /var/lib/apt/lists/*

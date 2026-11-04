@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+SRC=""
+for base in /media /run/media; do
+  [ -d "$base" ] || continue
+  candidate=$(find "$base" -maxdepth 4 -type f -name manifest.txt -path '*/QuantumEffects/manifest.txt' -print -quit 2>/dev/null || true)
+  if [ -n "$candidate" ]; then
+    SRC=${candidate%/manifest.txt}
+    break
+  fi
+done
+
+if [ -z "$SRC" ]; then
+  echo "QuantumEffects pack not found. Insert the USB containing QuantumEffects/manifest.txt and retry."
+  exit 1
+fi
+
+DEST=/usr/local/share/quantum-effects
+install -d -m 0755 "$DEST"
+# Copy assets only; never execute scripts from removable media.
+cp -a "$SRC"/. "$DEST"/
+chown -R root:root "$DEST"
+find "$DEST" -type d -exec chmod 0755 {} +
+find "$DEST" -type f -exec chmod 0644 {} +
+echo "Animation assets copied to $DEST. The USB can now be removed."
+echo "Plasma effect/theme integration must be supplied by a compatible QuantumEffects pack."

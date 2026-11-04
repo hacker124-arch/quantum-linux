@@ -1,0 +1,39 @@
+# Minimal KDE Plasma 6 desktop and Wayland session
+kde-plasma-desktop
+plasma-workspace-wayland
+sddm
+konsole
+dolphin
+ark
+kate
+systemsettings
+kde-config-gtk-style
+xdg-desktop-portal
+xdg-desktop-portal-kde
+
+# Audio, screen capture and OBS
+pipewire
+pipewire-audio
+wireplumber
+pipewire-pulse
+obs-studio
+v4l2loopback-dkms
+
+# Firmware, networking and useful base tools
+network-manager
+network-manager-gnome
+sudo
+curl
+ca-certificates
+gnupg
+git
+usbutils
+pciutils
+udisks2
+upower
+fonts-noto
+fonts-noto-color-emoji
+
+# Installer support
+live-installer
+tasksel

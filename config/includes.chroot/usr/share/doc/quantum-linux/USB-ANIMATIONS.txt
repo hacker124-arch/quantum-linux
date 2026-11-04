@@ -1,0 +1,11 @@
+Quantum Linux optional animation pack
+
+Place a directory named QuantumEffects at the root of a USB drive.
+It must contain manifest.txt. After installation, mount the USB in the
+desktop file manager and run:
+
+  sudo quantum-effects-import
+
+Assets are copied into /usr/local/share/quantum-effects. They remain on the
+internal drive after the USB is removed. Only data assets are copied; scripts
+on removable media are never run automatically.
