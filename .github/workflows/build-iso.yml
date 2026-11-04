@@ -1,8 +1,14 @@
-
 name: Build Quantum Linux ISO
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "auto/**"
+      - "config/**"
+      - ".github/workflows/**"
 
 permissions:
   contents: read
@@ -10,27 +16,62 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 360
+
     steps:
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install build tools
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y live-build debootstrap squashfs-tools xorriso isolinux syslinux-common syslinux-utils dosfstools mtools debian-archive-keyring
+          sudo apt-get install -y \
+            live-build \
+            debootstrap \
+            squashfs-tools \
+            xorriso \
+            dosfstools \
+            grub-pc-bin \
+            grub-efi-amd64-bin \
+            mtools \
+            rsync \
+            curl \
+            wget \
+            git
 
-      - name: Build ISO
+      - name: Fix Debian Trixie configuration
+        shell: bash
         run: |
-          chmod +x auto/config config/hooks/normal/*.hook.chroot
+          set -e
+
+          # Remove the invalid normal-package entry.
+          if [ -f config/package-lists/quantum.list.chroot ]; then
+            sed -i '/^[[:space:]]*live-installer[[:space:]]*$/d' \
+              config/package-lists/quantum.list.chroot
+          fi
+
+          # Prevent older live-build from generating trixie/updates.
+          if [ -f auto/config ]; then
+            sed -i '/^[[:space:]]*lb config/ s/$/ --security false/' auto/config
+          fi
+
+          echo "Configuration patch completed."
+
+      - name: Build Quantum Linux ISO
+        shell: bash
+        run: |
+          set -e
           sudo lb clean --purge || true
-          sudo ./auto/config
+          sudo lb config
           sudo lb build
 
-      - name: Upload ISO
+      - name: Upload ISO artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: quantum-linux-iso
-          path: "*.iso"
+          path: |
+            *.iso
+            live-image-*.iso
           if-no-files-found: error
           retention-days: 7
