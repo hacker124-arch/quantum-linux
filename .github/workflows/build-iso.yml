@@ -1,3 +1,4 @@
+
 name: Build Quantum Linux ISO
 
 on:
@@ -27,7 +28,9 @@ jobs:
         shell: bash
         run: |
           set -e
+
           sudo apt-get update
+
           sudo apt-get install -y \
             live-build \
             debootstrap \
@@ -50,20 +53,56 @@ jobs:
           test -f auto/config
           test -f config/package-lists/quantum.list.chroot
 
-          echo "Checking Debian Trixie configuration..."
           grep -q -- "--distribution trixie" auto/config
 
-          # Remove live-installer if present:
-          # it is not a normal desktop package.
           sed -i '/^[[:space:]]*live-installer[[:space:]]*$/d' \
             config/package-lists/quantum.list.chroot
+
+          echo "Configuration validated."
+
+      - name: Patch Debian Contents URL
+        shell: bash
+        run: |
+          set -e
+
+          SCRIPT="/usr/lib/live/build/lb_chroot_linux-image"
+
+          if [ ! -f "$SCRIPT" ]; then
+            SCRIPT="/usr/share/live/build/lb_chroot_linux-image"
+          fi
+
+          if [ ! -f "$SCRIPT" ]; then
+            echo "ERROR: Cannot locate lb_chroot_linux-image"
+            exit 1
+          fi
+
+          echo "Patching: $SCRIPT"
+
+          sudo sed -i \
+            's|/dists/${LB_PARENT_DISTRIBUTION}/Contents-${LB_ARCHITECTURES}.gz|/dists/${LB_PARENT_DISTRIBUTION}/main/Contents-${LB_ARCHITECTURES}.gz|g' \
+            "$SCRIPT"
+
+          sudo sed -i \
+            's|/dists/${LB_DISTRIBUTION}/Contents-${LB_ARCHITECTURES}.gz|/dists/${LB_DISTRIBUTION}/main/Contents-${LB_ARCHITECTURES}.gz|g' \
+            "$SCRIPT"
+
+          echo "Checking patched URLs..."
+
+          grep -n "Contents-" "$SCRIPT"
+
+          if grep -qE '/dists/\$\{LB_(PARENT_)?DISTRIBUTION\}/Contents-' "$SCRIPT"; then
+            echo "ERROR: Old broken Contents URL remains."
+            exit 1
+          fi
+
+          echo "Contents URL patch successful."
 
       - name: Clean previous build
         shell: bash
         run: |
           sudo lb clean --purge || true
 
-      - name: Configure Debian Trixie Live Build
+      - name: Configure Debian Trixie
         shell: bash
         run: |
           set -e
@@ -73,7 +112,10 @@ jobs:
             --distribution trixie \
             --architectures amd64 \
             --binary-images iso-hybrid \
-            --archive-areas "main contrib non-free-firmware" \
+            --archive-areas "main contrib non-free non-free-firmware" \
+            --mirror-bootstrap https://deb.debian.org/debian/ \
+            --mirror-chroot https://deb.debian.org/debian/ \
+            --mirror-binary https://deb.debian.org/debian/ \
             --apt-recommends false \
             --apt-options "--yes -oAcquire::Retries=3" \
             --security false \
@@ -81,17 +123,20 @@ jobs:
             --iso-volume "QUANTUM_LINUX" \
             --bootappend-live "boot=live components quiet splash"
 
-      - name: Build ISO
+      - name: Build Quantum Linux ISO
         shell: bash
         run: |
           set -e
+
           sudo lb build
 
-      - name: List generated ISO files
+      - name: Find generated ISO
         if: always()
         shell: bash
         run: |
-          find . -maxdepth 2 -type f -name "*.iso" -ls || true
+          echo "Searching for ISO files..."
+
+          find . -type f -name "*.iso" -ls || true
 
       - name: Upload Quantum Linux ISO
         if: success()
