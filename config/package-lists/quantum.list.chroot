@@ -3,6 +3,11 @@
 live-config-systemd
 systemd-sysv
 
+# ISO BIOS bootloader payloads required by live-build's ISOLINUX theme.
+# syslinux-common supplies vesamenu.c32; isolinux supplies isolinux.bin.
+isolinux
+syslinux-common
+
 # KDE Plasma desktop and Wayland session
 kde-plasma-desktop
 plasma-workspace
