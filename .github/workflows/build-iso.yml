@@ -77,29 +77,49 @@ jobs:
           grep -qx "sddm" config/package-lists/quantum.list.chroot
           echo "Source configuration checks passed."
 
-      - name: Patch Debian Trixie Contents lookup
+      - name: Patch Debian Trixie live-build compatibility
         shell: bash
         run: |
           set -euo pipefail
-          SCRIPT="/usr/lib/live/build/lb_chroot_linux-image"
-          if [ ! -f "$SCRIPT" ]; then
-            SCRIPT="/usr/share/live/build/lb_chroot_linux-image"
+
+          IMAGE_SCRIPT="/usr/lib/live/build/lb_chroot_linux-image"
+          ARCHIVES_SCRIPT="/usr/lib/live/build/lb_chroot_archives"
+
+          if [ ! -f "$IMAGE_SCRIPT" ]; then
+            IMAGE_SCRIPT="/usr/share/live/build/lb_chroot_linux-image"
           fi
-          if [ ! -f "$SCRIPT" ]; then
-            echo "ERROR: Cannot locate lb_chroot_linux-image"
-            exit 1
+          if [ ! -f "$ARCHIVES_SCRIPT" ]; then
+            ARCHIVES_SCRIPT="/usr/share/live/build/lb_chroot_archives"
           fi
+
+          test -f "$IMAGE_SCRIPT"
+          test -f "$ARCHIVES_SCRIPT"
+
+          # Ubuntu 24.04 ships an older live-build. Debian Trixie moved
+          # Contents indexes below the component path.
           sudo sed -i \
             's|/dists/${LB_PARENT_DISTRIBUTION}/Contents-${LB_ARCHITECTURES}.gz|/dists/${LB_PARENT_DISTRIBUTION}/main/Contents-${LB_ARCHITECTURES}.gz|g' \
-            "$SCRIPT"
+            "$IMAGE_SCRIPT"
           sudo sed -i \
             's|/dists/${LB_DISTRIBUTION}/Contents-${LB_ARCHITECTURES}.gz|/dists/${LB_DISTRIBUTION}/main/Contents-${LB_ARCHITECTURES}.gz|g' \
-            "$SCRIPT"
-          if grep -qE '/dists/\$\{LB_(PARENT_)?DISTRIBUTION\}/Contents-' "$SCRIPT"; then
+            "$IMAGE_SCRIPT"
+
+          # Debian 13 security suites use "trixie-security", not the
+          # obsolete "trixie/updates" suite emitted by this live-build.
+          sudo sed -i \
+            -e 's|${LB_PARENT_DISTRIBUTION}/updates|${LB_PARENT_DISTRIBUTION}-security|g' \
+            -e 's|${LB_DISTRIBUTION}/updates|${LB_DISTRIBUTION}-security|g' \
+            "$ARCHIVES_SCRIPT"
+
+          if grep -qE '/dists/\$\{LB_(PARENT_)?DISTRIBUTION\}/Contents-' "$IMAGE_SCRIPT"; then
             echo "ERROR: An unpatched Contents URL remains."
             exit 1
           fi
-          echo "Debian Contents lookup patch verified."
+          if grep -qE '\$\{LB_(PARENT_)?DISTRIBUTION\}/updates' "$ARCHIVES_SCRIPT"; then
+            echo "ERROR: An obsolete Debian security suite remains."
+            exit 1
+          fi
+          echo "Debian Trixie live-build compatibility patches verified."
 
       - name: Clean previous live-build state
         shell: bash
@@ -117,8 +137,9 @@ jobs:
           # discard the repository's authoritative build settings.
           sudo lb config
           echo "Generated live-build configuration:"
-          sudo grep -R -n -E 'LB_(DISTRIBUTION|ARCHITECTURES|INITSYSTEM|BINARY_IMAGES)=' config
+          sudo grep -R -n -E 'LB_(DISTRIBUTION|ARCHITECTURES|INITSYSTEM|BINARY_IMAGES|MIRROR_CHROOT_SECURITY|MIRROR_BINARY_SECURITY)=' config
           sudo grep -R -q -E 'LB_INITSYSTEM="?systemd"?' config
+          sudo grep -R -q -F 'https://security.debian.org/debian-security/' config
 
       - name: Build Quantum Linux ISO
         shell: bash
