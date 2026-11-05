@@ -218,8 +218,15 @@ jobs:
             grep -E -i 'error:|failed|cannot stat|unable to|dpkg: error|E:' "/tmp/quantum-build-attempt-${attempt}.log" | tail -n 40 || true
             echo "::endgroup::"
 
-            # Preserve the last diagnostic log as a workflow artifact on a
-            # later successful pass; wait briefly before a fresh clean retry.
+            # Apply safe, deterministic source repairs and push them to main.
+            # The current loop immediately rebuilds from the updated checkout;
+            # unknown failures are diagnosed and retried without destructive edits.
+            chmod +x .github/scripts/auto-repair-build.sh
+            if ! .github/scripts/auto-repair-build.sh "/tmp/quantum-build-attempt-${attempt}.log"; then
+              echo "Automatic source repair found no safe patch for this failure."
+            fi
+
+            # Preserve the last diagnostic log; wait before a fresh clean retry.
             sleep 30
           done
       - name: Verify and checksum ISO
