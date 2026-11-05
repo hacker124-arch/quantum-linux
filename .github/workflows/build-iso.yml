@@ -143,6 +143,25 @@ jobs:
           sudo grep -R -q -E 'LB_INITSYSTEM="?systemd"?' config
           sudo grep -R -q -F 'https://security.debian.org/debian-security/' config
 
+      - name: Prepare host ISOLINUX bootloader files
+        shell: bash
+        run: |
+          set -euo pipefail
+          # live-build's binary syslinux stage copies these from the BUILD HOST,
+          # not from the target chroot. Debian packages are installed above.
+          ISOLINUX_BIN="$(dpkg -L isolinux | awk '/\/isolinux\.bin$/ { print; exit }')"
+          VESAMENU_C32="$(dpkg -L syslinux-common | awk '/\/vesamenu\.c32$/ { print; exit }')"
+          test -n "$ISOLINUX_BIN"
+          test -n "$VESAMENU_C32"
+          test -s "$ISOLINUX_BIN"
+          test -s "$VESAMENU_C32"
+          sudo install -d -m 0755 /root/isolinux
+          sudo install -m 0644 "$ISOLINUX_BIN" /root/isolinux/isolinux.bin
+          sudo install -m 0644 "$VESAMENU_C32" /root/isolinux/vesamenu.c32
+          sudo test -s /root/isolinux/isolinux.bin
+          sudo test -s /root/isolinux/vesamenu.c32
+          echo "Host ISOLINUX bootloader files are ready."
+
       - name: Build Quantum Linux ISO
         shell: bash
         run: |
