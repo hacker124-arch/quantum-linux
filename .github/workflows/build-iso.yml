@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: quantum-linux-iso-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
