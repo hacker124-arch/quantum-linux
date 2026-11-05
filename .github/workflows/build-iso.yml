@@ -49,6 +49,8 @@ jobs:
             dosfstools \
             grub-pc-bin \
             grub-efi-amd64-bin \
+            isolinux \
+            syslinux-common \
             mtools \
             rsync \
             curl \
@@ -140,6 +142,22 @@ jobs:
           sudo grep -R -n -E 'LB_(DISTRIBUTION|ARCHITECTURES|INITSYSTEM|BINARY_IMAGES|MIRROR_CHROOT_SECURITY|MIRROR_BINARY_SECURITY)=' config
           sudo grep -R -q -E 'LB_INITSYSTEM="?systemd"?' config
           sudo grep -R -q -F 'https://security.debian.org/debian-security/' config
+
+      - name: Prepare ISOLINUX bootloader files
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The older Ubuntu 24.04 live-build helper expects these files in
+          # /root/isolinux. Its packaged copies live under /usr/share/live/build.
+          SOURCE_DIR="/usr/share/live/build/bootloaders/isolinux"
+          test -s "$SOURCE_DIR/isolinux.bin"
+          test -s "$SOURCE_DIR/vesamenu.c32"
+          sudo install -d -m 0755 /root/isolinux
+          sudo install -m 0644 "$SOURCE_DIR/isolinux.bin" /root/isolinux/isolinux.bin
+          sudo install -m 0644 "$SOURCE_DIR/vesamenu.c32" /root/isolinux/vesamenu.c32
+          sudo test -s /root/isolinux/isolinux.bin
+          sudo test -s /root/isolinux/vesamenu.c32
+          echo "ISOLINUX bootloader files prepared."
 
       - name: Build Quantum Linux ISO
         shell: bash
