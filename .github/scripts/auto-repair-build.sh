@@ -37,7 +37,7 @@ done
 
 if [[ -n "$LOG_FILE" ]]; then
   if grep -Eqi 'cp: cannot stat .*/root/isolinux/(isolinux\.bin|vesamenu\.c32)' "$LOG_FILE"; then
-    echo "DIAGNOSIS: host-side ISOLINUX staging failure. Workflow already stages these files before lb build."
+    echo "DIAGNOSIS: ISOLINUX staging failure. The corrected workflow stages both /root/isolinux and chroot/root/isolinux before every build attempt."
     if ! grep -q 'Prepare host ISOLINUX bootloader files' .github/workflows/build-iso.yml; then
       echo "ERROR: host bootloader staging step is missing; refusing an unsafe blind workflow rewrite." >&2
       exit 4
