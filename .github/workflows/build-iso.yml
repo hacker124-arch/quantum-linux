@@ -155,12 +155,14 @@ jobs:
           test -n "$VESAMENU_C32"
           test -s "$ISOLINUX_BIN"
           test -s "$VESAMENU_C32"
-          sudo install -d -m 0755 /root/isolinux
-          sudo install -m 0644 "$ISOLINUX_BIN" /root/isolinux/isolinux.bin
-          sudo install -m 0644 "$VESAMENU_C32" /root/isolinux/vesamenu.c32
-          sudo test -s /root/isolinux/isolinux.bin
-          sudo test -s /root/isolinux/vesamenu.c32
-          echo "ISOLINUX bootloader files prepared from: $ISOLINUX_BIN and $VESAMENU_C32"
+          # lb_binary_syslinux copies these paths from inside the target chroot,
+          # not from the GitHub runner. Stage them as chroot includes.
+          sudo install -d -m 0755 config/includes.chroot/root/isolinux
+          sudo install -m 0644 "$ISOLINUX_BIN" config/includes.chroot/root/isolinux/isolinux.bin
+          sudo install -m 0644 "$VESAMENU_C32" config/includes.chroot/root/isolinux/vesamenu.c32
+          sudo test -s config/includes.chroot/root/isolinux/isolinux.bin
+          sudo test -s config/includes.chroot/root/isolinux/vesamenu.c32
+          echo "ISOLINUX bootloader files staged inside the target chroot."
 
       - name: Build Quantum Linux ISO
         shell: bash
