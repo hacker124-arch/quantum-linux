@@ -12,7 +12,7 @@ on:
       - "README.md"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: quantum-linux-iso-${{ github.ref }}
@@ -162,13 +162,66 @@ jobs:
           sudo test -s /root/isolinux/vesamenu.c32
           echo "Host ISOLINUX bootloader files are ready."
 
-      - name: Build Quantum Linux ISO
+      - name: Automatic clean-build repair loop
         shell: bash
+        timeout-minutes: 350
         run: |
-          set -euo pipefail
-          # Do not retry a partially-mutated live-build chroot. The ISOLINUX
-          # hook now prepares the required files before the binary stage.
-          sudo lb build
+          set -uo pipefail
+          attempt=0
+          while true; do
+            attempt=$((attempt + 1))
+            echo "::group::Quantum Linux build attempt ${attempt}"
+            echo "Attempt ${attempt}: clean, configure, stage bootloader, build"
+
+            # Every attempt starts from a genuinely clean live-build tree.
+            # Never rerun lb build against a half-configured dpkg/chroot state.
+            sudo lb clean --purge || true
+            sudo rm -rf config/binary config/bootstrap config/chroot config/common config/source
+            sudo rm -rf chroot binary cache
+
+            if ! sudo lb config; then
+              echo "Configuration failed on attempt ${attempt}; retrying from clean state."
+              echo "::endgroup::"
+              sleep 20
+              continue
+            fi
+
+            # Debian live-build's binary syslinux stage reads these from the
+            # host's /root/isolinux directory (not the target chroot).
+            ISOLINUX_BIN="$(dpkg -L isolinux | awk '/\/isolinux\.bin$/ { print; exit }')"
+            VESAMENU_C32="$(dpkg -L syslinux-common | awk '/\/vesamenu\.c32$/ { print; exit }')"
+            if [ -z "$ISOLINUX_BIN" ] || [ -z "$VESAMENU_C32" ] ||
+               [ ! -s "$ISOLINUX_BIN" ] || [ ! -s "$VESAMENU_C32" ]; then
+              echo "Host ISOLINUX packages/files missing; reinstalling."
+              sudo apt-get update
+              sudo apt-get install -y isolinux syslinux-common
+              ISOLINUX_BIN="$(dpkg -L isolinux | awk '/\/isolinux\.bin$/ { print; exit }')"
+              VESAMENU_C32="$(dpkg -L syslinux-common | awk '/\/vesamenu\.c32$/ { print; exit }')"
+            fi
+            sudo install -d -m 0755 /root/isolinux
+            sudo install -m 0644 "$ISOLINUX_BIN" /root/isolinux/isolinux.bin
+            sudo install -m 0644 "$VESAMENU_C32" /root/isolinux/vesamenu.c32
+
+            set +e
+            sudo lb build 2>&1 | tee "/tmp/quantum-build-attempt-${attempt}.log"
+            build_status=${PIPESTATUS[0]}
+            set -e
+
+            if [ "$build_status" -eq 0 ]; then
+              echo "Build succeeded on attempt ${attempt}."
+              echo "::endgroup::"
+              exit 0
+            fi
+
+            echo "Build failed on attempt ${attempt} (exit ${build_status})."
+            echo "Failure signatures:"
+            grep -E -i 'error:|failed|cannot stat|unable to|dpkg: error|E:' "/tmp/quantum-build-attempt-${attempt}.log" | tail -n 40 || true
+            echo "::endgroup::"
+
+            # Preserve the last diagnostic log as a workflow artifact on a
+            # later successful pass; wait briefly before a fresh clean retry.
+            sleep 30
+          done
       - name: Verify and checksum ISO
         shell: bash
         run: |
