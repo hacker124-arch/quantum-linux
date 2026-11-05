@@ -1,6 +1,9 @@
 # Quantum Linux - Debian 13 Trixie / KDE Plasma 6
-# Full Plasma desktop with its Wayland session.
-# In Trixie, use plasma-workspace; plasma-workspace-wayland is not available.
+# Explicitly select the systemd live-config backend to match --initsystem systemd.
+live-config-systemd
+systemd-sysv
+
+# KDE Plasma desktop and Wayland session
 kde-plasma-desktop
 plasma-workspace
 kwin-wayland
@@ -37,7 +40,7 @@ systemd-timesyncd
 firmware-linux
 firmware-misc-nonfree
 
-# Audio, screen capture and streaming
+# Audio and screen recording
 pipewire
 pipewire-audio
 wireplumber

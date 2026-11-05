@@ -1,15 +1,21 @@
 #!/bin/sh
 set -eu
 
+# Single source of truth for the Debian 13 live image.
+# Keep the workflow invoking plain "lb config" so this file is executed.
 lb config noauto \
   --mode debian \
   --distribution trixie \
   --architectures amd64 \
   --binary-images iso-hybrid \
-  --debian-installer live \
+  --initsystem systemd \
   --archive-areas "main contrib non-free non-free-firmware" \
-  --apt-recommends true \
+  --mirror-bootstrap https://deb.debian.org/debian/ \
+  --mirror-chroot https://deb.debian.org/debian/ \
+  --mirror-binary https://deb.debian.org/debian/ \
+  --apt-recommends false \
   --apt-options "--yes -oAcquire::Retries=5 -oAcquire::http::Timeout=30" \
+  --security true \
   --iso-application "Quantum Linux" \
   --iso-volume "QUANTUM_LINUX" \
   --bootappend-live "boot=live components quiet splash"

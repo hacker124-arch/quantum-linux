@@ -1,4 +1,3 @@
-
 name: Build Quantum Linux ISO
 
 on:
@@ -10,13 +9,18 @@ on:
       - "auto/**"
       - "config/**"
       - ".github/workflows/build-iso.yml"
+      - "README.md"
 
 permissions:
   contents: read
 
+concurrency:
+  group: quantum-linux-iso-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    name: Build Quantum Linux
+    name: Build Quantum Linux (Debian 13 / KDE Plasma Wayland)
     runs-on: ubuntu-24.04
     timeout-minutes: 360
 
@@ -24,14 +28,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Show runner capacity
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h
+          free -h
+          uname -a
+
       - name: Install build dependencies
         shell: bash
         run: |
-          set -e
-
+          set -euo pipefail
           sudo apt-get update
-
-          sudo apt-get install -y \
+          sudo apt-get install -y --no-install-recommends \
             live-build \
             debootstrap \
             squashfs-tools \
@@ -43,106 +53,109 @@ jobs:
             rsync \
             curl \
             wget \
-            git
+            git \
+            file
 
-      - name: Validate Quantum Linux configuration
+      - name: Validate source configuration
         shell: bash
         run: |
-          set -e
-
-          test -f auto/config
-          test -f config/package-lists/quantum.list.chroot
-
+          set -euo pipefail
+          test -s auto/config
+          test -s config/package-lists/quantum.list.chroot
+          test -x config/hooks/normal/0100-quantum-packages.hook.chroot
           grep -q -- "--distribution trixie" auto/config
+          grep -q -- "--architectures amd64" auto/config
+          grep -q -- "--initsystem systemd" auto/config
+          grep -qx "live-config-systemd" config/package-lists/quantum.list.chroot
+          if grep -Eq 'live-config-sysvinit|sysvinit-core' config/package-lists/quantum.list.chroot; then
+            echo "ERROR: SysV init packages must not be in the Quantum Linux package list."
+            exit 1
+          fi
+          grep -qx "kde-plasma-desktop" config/package-lists/quantum.list.chroot
+          grep -qx "plasma-workspace" config/package-lists/quantum.list.chroot
+          grep -qx "kwin-wayland" config/package-lists/quantum.list.chroot
+          grep -qx "sddm" config/package-lists/quantum.list.chroot
+          echo "Source configuration checks passed."
 
-          sed -i '/^[[:space:]]*live-installer[[:space:]]*$/d' \
-            config/package-lists/quantum.list.chroot
-
-          echo "Configuration validated."
-
-      - name: Patch Debian Contents URL
+      - name: Patch Debian Trixie Contents lookup
         shell: bash
         run: |
-          set -e
-
+          set -euo pipefail
           SCRIPT="/usr/lib/live/build/lb_chroot_linux-image"
-
           if [ ! -f "$SCRIPT" ]; then
             SCRIPT="/usr/share/live/build/lb_chroot_linux-image"
           fi
-
           if [ ! -f "$SCRIPT" ]; then
             echo "ERROR: Cannot locate lb_chroot_linux-image"
             exit 1
           fi
-
-          echo "Patching: $SCRIPT"
-
           sudo sed -i \
             's|/dists/${LB_PARENT_DISTRIBUTION}/Contents-${LB_ARCHITECTURES}.gz|/dists/${LB_PARENT_DISTRIBUTION}/main/Contents-${LB_ARCHITECTURES}.gz|g' \
             "$SCRIPT"
-
           sudo sed -i \
             's|/dists/${LB_DISTRIBUTION}/Contents-${LB_ARCHITECTURES}.gz|/dists/${LB_DISTRIBUTION}/main/Contents-${LB_ARCHITECTURES}.gz|g' \
             "$SCRIPT"
-
-          echo "Checking patched URLs..."
-
-          grep -n "Contents-" "$SCRIPT"
-
           if grep -qE '/dists/\$\{LB_(PARENT_)?DISTRIBUTION\}/Contents-' "$SCRIPT"; then
-            echo "ERROR: Old broken Contents URL remains."
+            echo "ERROR: An unpatched Contents URL remains."
             exit 1
           fi
+          echo "Debian Contents lookup patch verified."
 
-          echo "Contents URL patch successful."
-
-      - name: Clean previous build
+      - name: Clean previous live-build state
         shell: bash
         run: |
+          set -euo pipefail
           sudo lb clean --purge || true
+          sudo rm -rf config/binary config/bootstrap config/chroot config/common config/source
+          sudo rm -rf chroot binary cache
 
-      - name: Configure Debian Trixie
+      - name: Configure using repository auto/config
         shell: bash
         run: |
-          set -e
-
-          sudo lb config noauto \
-            --mode debian \
-            --distribution trixie \
-            --architectures amd64 \
-            --binary-images iso-hybrid \
-            --archive-areas "main contrib non-free non-free-firmware" \
-            --mirror-bootstrap https://deb.debian.org/debian/ \
-            --mirror-chroot https://deb.debian.org/debian/ \
-            --mirror-binary https://deb.debian.org/debian/ \
-            --apt-recommends false \
-            --apt-options "--yes -oAcquire::Retries=3" \
-            --security false \
-            --iso-application "Quantum Linux" \
-            --iso-volume "QUANTUM_LINUX" \
-            --bootappend-live "boot=live components quiet splash"
+          set -euo pipefail
+          # Do not use 'noauto' here. It would bypass auto/config and silently
+          # discard the repository's authoritative build settings.
+          sudo lb config
+          echo "Generated live-build configuration:"
+          sudo grep -R -n -E 'LB_(DISTRIBUTION|ARCHITECTURES|INITSYSTEM|BINARY_IMAGES)=' config
+          sudo grep -R -q -E 'LB_INITSYSTEM="?systemd"?' config
 
       - name: Build Quantum Linux ISO
         shell: bash
         run: |
-          set -e
-
+          set -euo pipefail
           sudo lb build
 
-      - name: Find generated ISO
-        if: always()
+      - name: Verify and checksum ISO
         shell: bash
         run: |
-          echo "Searching for ISO files..."
-
-          find . -type f -name "*.iso" -ls || true
+          set -euo pipefail
+          ISO_PATH="$(sudo find . -type f -name '*.iso' -not -path './chroot/*' -not -path './cache/*' -print -quit)"
+          if [ -z "$ISO_PATH" ]; then
+            echo "ERROR: live-build finished without producing an ISO."
+            exit 1
+          fi
+          sudo test -s "$ISO_PATH"
+          sudo xorriso -indev "$ISO_PATH" -pvd_info
+          sudo cp "$ISO_PATH" Quantum-Linux-Debian13-amd64.iso
+          sudo chown "$(id -u):$(id -g)" Quantum-Linux-Debian13-amd64.iso
+          sha256sum Quantum-Linux-Debian13-amd64.iso | tee SHA256SUMS
+          ls -lh Quantum-Linux-Debian13-amd64.iso SHA256SUMS
 
       - name: Upload Quantum Linux ISO
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Quantum-Linux-ISO
-          path: "*.iso"
+          name: Quantum-Linux-Debian13-amd64
+          path: |
+            Quantum-Linux-Debian13-amd64.iso
+            SHA256SUMS
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
+
+      - name: Report build outputs
+        if: always()
+        shell: bash
+        run: |
+          echo "ISO outputs:"
+          sudo find . -maxdepth 3 -type f \( -name '*.iso' -o -name 'SHA256SUMS' \) -printf '%p %s bytes\n' || true
