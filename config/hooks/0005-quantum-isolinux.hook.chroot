@@ -1,0 +1,21 @@
+#!/bin/sh
+set -eu
+
+# Ubuntu 24.04's live-build 3.0~a57 scans root-level config/hooks/*.chroot.
+# Run after the target packages are installed so the binary syslinux stage
+# can find its bootloader payload inside the chroot.
+ISOLINUX_BIN="$(dpkg -L isolinux | awk '/\/isolinux\.bin$/ { print; exit }')"
+VESAMENU_C32="$(dpkg -L syslinux-common | awk '/\/vesamenu\.c32$/ { print; exit }')"
+
+test -n "$ISOLINUX_BIN"
+test -n "$VESAMENU_C32"
+test -s "$ISOLINUX_BIN"
+test -s "$VESAMENU_C32"
+
+install -d -m 0755 /root/isolinux
+install -m 0644 "$ISOLINUX_BIN" /root/isolinux/isolinux.bin
+install -m 0644 "$VESAMENU_C32" /root/isolinux/vesamenu.c32
+test -s /root/isolinux/isolinux.bin
+test -s /root/isolinux/vesamenu.c32
+
+echo "ISOLINUX files installed in target chroot by root-level compatibility hook."

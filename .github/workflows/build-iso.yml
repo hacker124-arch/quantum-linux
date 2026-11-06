@@ -65,6 +65,7 @@ jobs:
           test -s auto/config
           test -s config/package-lists/quantum.list.chroot
           test -x config/hooks/normal/0100-quantum-packages.hook.chroot
+          test -x config/hooks/0005-quantum-isolinux.hook.chroot
           grep -q -- "--distribution trixie" auto/config
           grep -q -- "--architectures amd64" auto/config
           grep -q -- "--initsystem systemd" auto/config
