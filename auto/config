@@ -3,8 +3,8 @@ set -eu
 
 # Single source of truth for the Debian 13 live image.
 # Keep the workflow invoking plain "lb config" so this file is executed.
-# Zstandard avoids the extremely slow default XZ SquashFS compression on
-# the hosted runner while retaining good compression and full SquashFS support.
+# Use the compression default supported by Ubuntu 24.04's live-build.
+# (Its older lb config parser does not accept the SquashFS compression flags.)
 lb config noauto \
   --mode debian \
   --distribution trixie \
@@ -12,8 +12,6 @@ lb config noauto \
   --binary-images iso-hybrid \
   --initsystem systemd \
   --chroot-filesystem squashfs \
-  --chroot-squashfs-compression-type zstd \
-  --chroot-squashfs-compression-level 3 \
   --archive-areas "main contrib non-free non-free-firmware" \
   --mirror-bootstrap https://deb.debian.org/debian/ \
   --mirror-chroot https://deb.debian.org/debian/ \
