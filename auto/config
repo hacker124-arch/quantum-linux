@@ -20,7 +20,7 @@ lb config noauto \
   --mirror-binary-security https://security.debian.org/debian-security/ \
   --apt-recommends false \
   --apt-options "--yes -oAcquire::Retries=5 -oAcquire::http::Timeout=30" \
-  --security true \
+  --security false \
   --iso-application "Quantum Linux" \
   --iso-volume "QUANTUM_LINUX" \
   --bootappend-live "boot=live components quiet splash"
