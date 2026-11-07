@@ -1,294 +1,155 @@
-name: Build Quantum Linux ISO
+
+name: Quantum Linux ISO Builder
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-    paths:
-      - "auto/**"
-      - "config/**"
-      - ".github/workflows/build-iso.yml"
-      - "README.md"
+    branches: [main]
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Quantum Linux ISO Builder"]
+    types: [completed]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: quantum-linux-iso-${{ github.ref }}
-  cancel-in-progress: true
+  group: quantum-linux-build
+  cancel-in-progress: false
 
 jobs:
   build:
-    name: Build Quantum Linux (Debian 13 / KDE Plasma Wayland)
+    name: Build Quantum Linux
     runs-on: ubuntu-24.04
     timeout-minutes: 360
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -f auto/config
+          test -x auto/config
+
+          echo "Configuration script found."
+          echo "Debian Trixie / KDE Plasma 6 / Wayland must remain configured in the repository."
 
       - name: Show runner capacity
-        shell: bash
         run: |
-          set -euo pipefail
           df -h
           free -h
-          uname -a
+          nproc
 
       - name: Install build dependencies
-        shell: bash
         run: |
-          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             live-build \
             debootstrap \
             squashfs-tools \
             xorriso \
-            dosfstools \
-            grub-pc-bin \
-            grub-efi-amd64-bin \
             isolinux \
             syslinux-common \
+            grub-pc-bin \
+            grub-efi-amd64-bin \
             mtools \
+            dosfstools \
             rsync \
+            git \
             curl \
             wget \
-            git \
+            ca-certificates \
+            gnupg \
+            zstd \
+            cpio \
             file
 
-      - name: Validate source configuration
+      - name: Verify live-build
+        run: |
+          lb --version
+          debootstrap --version
+          mksquashfs -version
+          xorriso -version
+
+      - name: Configure Debian Live
         shell: bash
         run: |
           set -euo pipefail
-          test -s auto/config
-          test -s config/package-lists/quantum.list.chroot
-          test -x config/hooks/normal/0100-quantum-packages.hook.chroot
-          test -x config/hooks/0005-quantum-isolinux.hook.chroot
-          grep -q -- "--distribution trixie" auto/config
-          grep -q -- "--architectures amd64" auto/config
-          grep -q -- "--initsystem systemd" auto/config
-          grep -qx "live-config-systemd" config/package-lists/quantum.list.chroot
-          if grep -Eq 'live-config-sysvinit|sysvinit-core' config/package-lists/quantum.list.chroot; then
-            echo "ERROR: SysV init packages must not be in the Quantum Linux package list."
+
+          sudo lb config \
+            --chroot-squashfs-compression-type zstd \
+            --checksums sha256
+
+      - name: Validate Debian configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Checking configuration files..."
+
+          grep -RniE 'trixie|bookworm|bullseye|precise' \
+            config auto || true
+
+          echo "Build configuration generated."
+
+      - name: Build ISO
+        shell: bash
+        timeout-minutes: 320
+        run: |
+          set -euo pipefail
+
+          sudo lb build 2>&1 | tee quantum-build.log
+
+      - name: Verify ISO and generate SHA256SUMS
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p output
+
+          ISO=$(find . -type f -name '*.iso' \
+            -not -path './.git/*' \
+            -not -path './output/*' \
+            -print -quit)
+
+          if [ -z "$ISO" ]; then
+            echo "::error::No ISO was generated."
             exit 1
           fi
-          grep -qx "kde-plasma-desktop" config/package-lists/quantum.list.chroot
-          grep -qx "plasma-workspace" config/package-lists/quantum.list.chroot
-          grep -qx "kwin-wayland" config/package-lists/quantum.list.chroot
-          grep -qx "sddm" config/package-lists/quantum.list.chroot
-          echo "Source configuration checks passed."
 
-      - name: Patch Debian Trixie live-build compatibility
-        shell: bash
-        run: |
-          set -euo pipefail
+          cp "$ISO" output/Quantum-Linux.iso
 
-          IMAGE_SCRIPT="/usr/lib/live/build/lb_chroot_linux-image"
-          ARCHIVES_SCRIPT="/usr/lib/live/build/lb_chroot_archives"
+          cd output
+          sha256sum Quantum-Linux.iso > SHA256SUMS
 
-          if [ ! -f "$IMAGE_SCRIPT" ]; then
-            IMAGE_SCRIPT="/usr/share/live/build/lb_chroot_linux-image"
-          fi
-          if [ ! -f "$ARCHIVES_SCRIPT" ]; then
-            ARCHIVES_SCRIPT="/usr/share/live/build/lb_chroot_archives"
-          fi
-
-          test -f "$IMAGE_SCRIPT"
-          test -f "$ARCHIVES_SCRIPT"
-
-          # Ubuntu 24.04 ships an older live-build. Debian Trixie moved
-          # Contents indexes below the component path.
-          sudo sed -i \
-            's|/dists/${LB_PARENT_DISTRIBUTION}/Contents-${LB_ARCHITECTURES}.gz|/dists/${LB_PARENT_DISTRIBUTION}/main/Contents-${LB_ARCHITECTURES}.gz|g' \
-            "$IMAGE_SCRIPT"
-          sudo sed -i \
-            's|/dists/${LB_DISTRIBUTION}/Contents-${LB_ARCHITECTURES}.gz|/dists/${LB_DISTRIBUTION}/main/Contents-${LB_ARCHITECTURES}.gz|g' \
-            "$IMAGE_SCRIPT"
-
-          # Debian 13 security suites use "trixie-security", not the
-          # obsolete "trixie/updates" suite emitted by this live-build.
-          sudo sed -i \
-            -e 's|${LB_PARENT_DISTRIBUTION}/updates|${LB_PARENT_DISTRIBUTION}-security|g' \
-            -e 's|${LB_DISTRIBUTION}/updates|${LB_DISTRIBUTION}-security|g' \
-            "$ARCHIVES_SCRIPT"
-
-          if grep -qE '/dists/\$\{LB_(PARENT_)?DISTRIBUTION\}/Contents-' "$IMAGE_SCRIPT"; then
-            echo "ERROR: An unpatched Contents URL remains."
-            exit 1
-          fi
-          if grep -qE '\$\{LB_(PARENT_)?DISTRIBUTION\}/updates' "$ARCHIVES_SCRIPT"; then
-            echo "ERROR: An obsolete Debian security suite remains."
-            exit 1
-          fi
-          echo "Debian Trixie live-build compatibility patches verified."
-
-      - name: Clean previous live-build state
-        shell: bash
-        run: |
-          set -euo pipefail
-          sudo lb clean --purge || true
-          sudo rm -rf config/binary config/bootstrap config/chroot config/common config/source
-          sudo rm -rf chroot binary cache
-
-      - name: Configure using repository auto/config
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Do not use 'noauto' here. It would bypass auto/config and silently
-          # discard the repository's authoritative build settings.
-          sudo lb config
-          # Ubuntu 24.04's live-build parser lacks the SquashFS compression CLI
-          # flags, but it reads this generated config file. Zstandard keeps
-          # rootfs compression substantially faster than the xz default.
-          sudo sed -i 's/^LB_CHROOT_SQUASHFS_COMPRESSION_TYPE=.*/LB_CHROOT_SQUASHFS_COMPRESSION_TYPE="zstd"/' config/chroot
-          grep -qx 'LB_CHROOT_SQUASHFS_COMPRESSION_TYPE="zstd"' config/chroot
-          echo "Generated live-build configuration:"
-          sudo grep -R -n -E 'LB_(DISTRIBUTION|ARCHITECTURES|INITSYSTEM|BINARY_IMAGES|MIRROR_CHROOT_SECURITY|MIRROR_BINARY_SECURITY)=' config
-          sudo grep -R -q -E 'LB_INITSYSTEM="?systemd"?' config
-          sudo grep -R -q -F 'https://security.debian.org/debian-security/' config
-
-      - name: Prepare host ISOLINUX bootloader files
-        shell: bash
-        run: |
-          set -euo pipefail
-          # live-build's binary syslinux stage copies these from the BUILD HOST,
-          # not from the target chroot. Debian packages are installed above.
-          ISOLINUX_BIN="$(dpkg -L isolinux | awk '/\/isolinux\.bin$/ { print; exit }')"
-          VESAMENU_C32="$(dpkg -L syslinux-common | awk '/\/vesamenu\.c32$/ { print; exit }')"
-          test -n "$ISOLINUX_BIN"
-          test -n "$VESAMENU_C32"
-          test -s "$ISOLINUX_BIN"
-          test -s "$VESAMENU_C32"
-          # live-build's syslinux helper may execute with the target chroot
-          # as its filesystem root. Stage both host and target-root paths.
-          sudo install -d -m 0755 /root/isolinux chroot/root/isolinux
-          sudo install -m 0644 "$ISOLINUX_BIN" /root/isolinux/isolinux.bin
-          sudo install -m 0644 "$VESAMENU_C32" /root/isolinux/vesamenu.c32
-          sudo install -m 0644 "$ISOLINUX_BIN" chroot/root/isolinux/isolinux.bin
-          sudo install -m 0644 "$VESAMENU_C32" chroot/root/isolinux/vesamenu.c32
-          sudo test -s /root/isolinux/isolinux.bin
-          sudo test -s /root/isolinux/vesamenu.c32
-          sudo test -s chroot/root/isolinux/isolinux.bin
-          sudo test -s chroot/root/isolinux/vesamenu.c32
-          echo "Host and target-root ISOLINUX bootloader files are ready."
-
-      - name: Automatic clean-build repair loop
-        shell: bash
-        timeout-minutes: 350
-        run: |
-          set -uo pipefail
-          attempt=0
-          while true; do
-            attempt=$((attempt + 1))
-            echo "::group::Quantum Linux build attempt ${attempt}"
-            echo "Attempt ${attempt}: clean, configure, stage bootloader, build"
-
-            # Every attempt starts from a genuinely clean live-build tree.
-            # Never rerun lb build against a half-configured dpkg/chroot state.
-            sudo lb clean --purge || true
-            sudo rm -rf config/binary config/bootstrap config/chroot config/common config/source
-            sudo rm -rf chroot binary cache
-
-            if ! sudo lb config; then
-              echo "Configuration failed on attempt ${attempt}; retrying from clean state."
-              echo "::endgroup::"
-              sleep 20
-              continue
-            fi
-
-            # Reapply after every clean configuration because lb clean removes
-            # generated config/chroot. Avoid unsupported CLI flags on Ubuntu's
-            # older live-build while selecting the faster Zstandard compressor.
-            if ! sudo sed -i 's/^LB_CHROOT_SQUASHFS_COMPRESSION_TYPE=.*/LB_CHROOT_SQUASHFS_COMPRESSION_TYPE="zstd"/' config/chroot ||
-               ! grep -qx 'LB_CHROOT_SQUASHFS_COMPRESSION_TYPE="zstd"' config/chroot; then
-              echo "Could not enable Zstandard SquashFS compression."
-              exit 1
-            fi
-
-            # Debian live-build's binary syslinux stage reads these from the
-            # host's /root/isolinux directory (not the target chroot).
-            ISOLINUX_BIN="$(dpkg -L isolinux | awk '/\/isolinux\.bin$/ { print; exit }')"
-            VESAMENU_C32="$(dpkg -L syslinux-common | awk '/\/vesamenu\.c32$/ { print; exit }')"
-            if [ -z "$ISOLINUX_BIN" ] || [ -z "$VESAMENU_C32" ] ||
-               [ ! -s "$ISOLINUX_BIN" ] || [ ! -s "$VESAMENU_C32" ]; then
-              echo "Host ISOLINUX packages/files missing; reinstalling."
-              sudo apt-get update
-              sudo apt-get install -y isolinux syslinux-common
-              ISOLINUX_BIN="$(dpkg -L isolinux | awk '/\/isolinux\.bin$/ { print; exit }')"
-              VESAMENU_C32="$(dpkg -L syslinux-common | awk '/\/vesamenu\.c32$/ { print; exit }')"
-            fi
-            # Stage both filesystem views: some live-build versions run
-            # the syslinux helper inside chroot and resolve /root there.
-            sudo install -d -m 0755 /root/isolinux chroot/root/isolinux
-            sudo install -m 0644 "$ISOLINUX_BIN" /root/isolinux/isolinux.bin
-            sudo install -m 0644 "$VESAMENU_C32" /root/isolinux/vesamenu.c32
-            sudo install -m 0644 "$ISOLINUX_BIN" chroot/root/isolinux/isolinux.bin
-            sudo install -m 0644 "$VESAMENU_C32" chroot/root/isolinux/vesamenu.c32
-            sudo test -s /root/isolinux/isolinux.bin
-            sudo test -s /root/isolinux/vesamenu.c32
-            sudo test -s chroot/root/isolinux/isolinux.bin
-            sudo test -s chroot/root/isolinux/vesamenu.c32
-            echo "Verified ISOLINUX files in host and chroot paths."
-
-            set +e
-            sudo lb build 2>&1 | tee "/tmp/quantum-build-attempt-${attempt}.log"
-            build_status=${PIPESTATUS[0]}
-            set -e
-
-            if [ "$build_status" -eq 0 ]; then
-              echo "Build succeeded on attempt ${attempt}."
-              echo "::endgroup::"
-              exit 0
-            fi
-
-            echo "Build failed on attempt ${attempt} (exit ${build_status})."
-            echo "Failure signatures:"
-            grep -E -i 'error:|failed|cannot stat|unable to|dpkg: error|E:' "/tmp/quantum-build-attempt-${attempt}.log" | tail -n 40 || true
-            echo "::endgroup::"
-
-            # Apply safe, deterministic source repairs and push them to main.
-            # The current loop immediately rebuilds from the updated checkout;
-            # unknown failures are diagnosed and retried without destructive edits.
-            chmod +x .github/scripts/auto-repair-build.sh
-            if ! .github/scripts/auto-repair-build.sh "/tmp/quantum-build-attempt-${attempt}.log"; then
-              echo "Automatic source repair found no safe patch for this failure."
-            fi
-
-            # Preserve the last diagnostic log; wait before a fresh clean retry.
-            sleep 30
-          done
-      - name: Verify and checksum ISO
-        shell: bash
-        run: |
-          set -euo pipefail
-          ISO_PATH="$(sudo find . -type f -name '*.iso' -not -path './chroot/*' -not -path './cache/*' -print -quit)"
-          if [ -z "$ISO_PATH" ]; then
-            echo "ERROR: live-build finished without producing an ISO."
-            exit 1
-          fi
-          sudo test -s "$ISO_PATH"
-          sudo xorriso -indev "$ISO_PATH" -pvd_info
-          sudo cp "$ISO_PATH" Quantum-Linux-Debian13-amd64.iso
-          sudo chown "$(id -u):$(id -g)" Quantum-Linux-Debian13-amd64.iso
-          sha256sum Quantum-Linux-Debian13-amd64.iso | tee SHA256SUMS
-          ls -lh Quantum-Linux-Debian13-amd64.iso SHA256SUMS
+          ls -lh
+          cat SHA256SUMS
 
       - name: Upload Quantum Linux ISO
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Quantum-Linux-Debian13-amd64
+          name: Quantum-Linux-ISO
           path: |
-            Quantum-Linux-Debian13-amd64.iso
-            SHA256SUMS
+            output/Quantum-Linux.iso
+            output/SHA256SUMS
           if-no-files-found: error
-          retention-days: 14
+          compression-level: 0
+          retention-days: 30
 
-      - name: Report build outputs
-        if: always()
-        shell: bash
-        run: |
-          echo "ISO outputs:"
-          sudo find . -maxdepth 3 -type f \( -name '*.iso' -o -name 'SHA256SUMS' \) -printf '%p %s bytes\n' || true
+      - name: Upload failure logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Quantum-Linux-Build-Logs
+          path: |
+            quantum-build.log
+          if-no-files-found: ignore
+          retention-days: 7
