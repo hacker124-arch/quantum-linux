@@ -139,6 +139,11 @@ jobs:
           # Do not use 'noauto' here. It would bypass auto/config and silently
           # discard the repository's authoritative build settings.
           sudo lb config
+          # Ubuntu 24.04's live-build parser lacks the SquashFS compression CLI
+          # flags, but it reads this generated config file. Zstandard keeps
+          # rootfs compression substantially faster than the xz default.
+          sudo sed -i 's/^LB_CHROOT_SQUASHFS_COMPRESSION_TYPE=.*/LB_CHROOT_SQUASHFS_COMPRESSION_TYPE="zstd"/' config/chroot
+          grep -qx 'LB_CHROOT_SQUASHFS_COMPRESSION_TYPE="zstd"' config/chroot
           echo "Generated live-build configuration:"
           sudo grep -R -n -E 'LB_(DISTRIBUTION|ARCHITECTURES|INITSYSTEM|BINARY_IMAGES|MIRROR_CHROOT_SECURITY|MIRROR_BINARY_SECURITY)=' config
           sudo grep -R -q -E 'LB_INITSYSTEM="?systemd"?' config
@@ -191,6 +196,15 @@ jobs:
               echo "::endgroup::"
               sleep 20
               continue
+            fi
+
+            # Reapply after every clean configuration because lb clean removes
+            # generated config/chroot. Avoid unsupported CLI flags on Ubuntu's
+            # older live-build while selecting the faster Zstandard compressor.
+            if ! sudo sed -i 's/^LB_CHROOT_SQUASHFS_COMPRESSION_TYPE=.*/LB_CHROOT_SQUASHFS_COMPRESSION_TYPE="zstd"/' config/chroot ||
+               ! grep -qx 'LB_CHROOT_SQUASHFS_COMPRESSION_TYPE="zstd"' config/chroot; then
+              echo "Could not enable Zstandard SquashFS compression."
+              exit 1
             fi
 
             # Debian live-build's binary syslinux stage reads these from the
