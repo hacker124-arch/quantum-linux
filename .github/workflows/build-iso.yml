@@ -5,9 +5,6 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  workflow_run:
-    workflows: ["Quantum Linux ISO Builder"]
-    types: [completed]
 
 permissions:
   contents: read
@@ -37,7 +34,6 @@ jobs:
           test -x auto/config
 
           echo "Configuration script found."
-          echo "Debian Trixie / KDE Plasma 6 / Wayland must remain configured in the repository."
 
       - name: Show runner capacity
         run: |
@@ -72,6 +68,7 @@ jobs:
 
       - name: Verify live-build
         run: |
+          set -euo pipefail
           lb --version
           debootstrap --version
           mksquashfs -version
@@ -81,22 +78,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sudo lb config
 
-          sudo lb config \
-            --chroot-squashfs-compression-type zstd \
-            --checksums sha256
-
-      - name: Validate Debian configuration
+      - name: Validate generated configuration
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "Checking configuration files..."
+          test -f config/binary
+          test -f config/bootstrap
 
-          grep -RniE 'trixie|bookworm|bullseye|precise' \
-            config auto || true
-
-          echo "Build configuration generated."
+          echo "Generated live-build configuration:"
+          sudo grep -E '^(LB_DISTRIBUTION|LB_MODE|LB_ARCHITECTURES|LB_INIT_SYSTEM)=' \
+            config/bootstrap config/binary || true
 
       - name: Build ISO
         shell: bash
@@ -124,7 +118,8 @@ jobs:
             exit 1
           fi
 
-          cp "$ISO" output/Quantum-Linux.iso
+          sudo cp "$ISO" output/Quantum-Linux.iso
+          sudo chown "$USER:$USER" output/Quantum-Linux.iso
 
           cd output
           sha256sum Quantum-Linux.iso > SHA256SUMS
