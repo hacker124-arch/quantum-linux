@@ -58,11 +58,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p config/archives
-          curl -fsSL https://raw.githubusercontent.com/imputnet/helium-linux/main/pubkey.asc \
-            -o config/archives/helium.key.chroot
+          curl -fsSL https://raw.githubusercontent.com/imputnet/helium-linux/main/pubkey.asc |
+            gpg --batch --yes --dearmor -o config/archives/helium.key.chroot
           cat > config/archives/helium.list.chroot <<'EOF'
           deb https://pkg.helium.computer/deb stable main
           EOF
+          file config/archives/helium.key.chroot
+          gpg --show-keys config/archives/helium.key.chroot
           test -s config/archives/helium.key.chroot
           test -s config/archives/helium.list.chroot
 
