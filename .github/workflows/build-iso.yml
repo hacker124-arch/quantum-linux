@@ -68,7 +68,7 @@ jobs:
           mkdir -p config/bootloaders/isolinux
           install -m 0644 "$isolinux_bin" config/bootloaders/isolinux/isolinux.bin
           install -m 0644 "$vesamenu" config/bootloaders/isolinux/vesamenu.c32
-          ls -l /root/isolinux/isolinux.bin /root/isolinux/vesamenu.c32
+          sudo ls -l /root/isolinux/isolinux.bin /root/isolinux/vesamenu.c32
 
       - name: Patch live-build Debian Contents index URL
         shell: bash
