@@ -57,14 +57,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p config/archives
-          curl -fsSL https://raw.githubusercontent.com/imputnet/helium-linux/main/pubkey.asc \
-            -o config/archives/helium.key.chroot
+          mkdir -p config/includes.chroot/usr/share/keyrings config/archives
+          curl -fsSL https://raw.githubusercontent.com/imputnet/helium-linux/main/pubkey.asc |
+            gpg --dearmor > config/includes.chroot/usr/share/keyrings/helium.gpg
           cat > config/archives/helium.list.chroot <<'EOF'
-          deb https://pkg.helium.computer/deb stable main
+          deb [arch=amd64 signed-by=/usr/share/keyrings/helium.gpg] https://pkg.helium.computer/deb stable main
           EOF
-          test -s config/archives/helium.key.chroot
+          test -s config/includes.chroot/usr/share/keyrings/helium.gpg
           test -s config/archives/helium.list.chroot
+          cat > config/archives/debian-security.list.chroot <<'EOF'
+          deb https://security.debian.org/debian-security trixie-security main contrib non-free non-free-firmware
+          EOF
 
       - name: Create XFCE package list
         shell: bash
