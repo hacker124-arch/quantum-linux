@@ -1,4 +1,3 @@
-
 name: Quantum Linux XFCE ISO Builder
 
 on:
@@ -48,11 +47,24 @@ jobs:
             network-manager network-manager-gnome \
             pavucontrol pipewire pipewire-pulse wireplumber \
             gvfs gvfs-backends \
-            fonts-liberation fonts-noto firefox-esr \
+            fonts-liberation fonts-noto \
             plymouth plymouth-themes \
             python3 python3-tk python3-pil python3-pil.imagetk \
             python3-cairosvg \
             sudo systemd initramfs-tools
+
+      - name: Configure Helium browser repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p config/archives
+          curl -fsSL https://raw.githubusercontent.com/imputnet/helium-linux/main/pubkey.asc \
+            -o config/archives/helium.key.chroot
+          cat > config/archives/helium.list.chroot <<'EOF'
+          deb https://pkg.helium.computer/deb stable main
+          EOF
+          test -s config/archives/helium.key.chroot
+          test -s config/archives/helium.list.chroot
 
       - name: Create XFCE package list
         shell: bash
@@ -79,7 +91,7 @@ jobs:
           wireplumber
           gvfs
           gvfs-backends
-          firefox-esr
+          helium-bin
           plymouth
           plymouth-themes
           python3
@@ -114,7 +126,6 @@ jobs:
           TitleVerticalAlignment=.45
           WatermarkHorizontalAlignment=.5
           WatermarkVerticalAlignment=.5
-          WatermarkVerticalAlignment=0.5
           WatermarkImage=/usr/share/plymouth/themes/quantum/watermark.png
           EOF
 
@@ -150,7 +161,6 @@ jobs:
           cat > "$APP" <<'PYTHON'
           #!/usr/bin/python3
           import os
-          import shutil
           import subprocess
           import tkinter as tk
           from tkinter import filedialog, messagebox
@@ -158,10 +168,7 @@ jobs:
 
           TARGET = "/usr/share/plymouth/themes/quantum/watermark.png"
           DEFAULT = "/usr/share/plymouth/themes/quantum/default-watermark.png"
-          SUPPORTED = (
-              ".png", ".jpg", ".jpeg", ".bmp", ".webp",
-              ".gif", ".tif", ".tiff"
-          )
+          SUPPORTED = (".png", ".jpg", ".jpeg", ".bmp", ".webp", ".gif", ".tif", ".tiff")
 
           class IconnManager:
               def __init__(self, root):
@@ -169,54 +176,28 @@ jobs:
                   root.title("Iconn Manager")
                   root.geometry("480x420")
                   root.configure(bg="#171329")
-
-                  tk.Label(
-                      root, text="Iconn Manager",
-                      font=("Arial", 22, "bold"),
-                      fg="#c5a5ff", bg="#171329"
-                  ).pack(pady=18)
-
-                  tk.Label(
-                      root, text="Change your Quantum Linux boot logo",
-                      fg="white", bg="#171329"
-                  ).pack()
-
+                  tk.Label(root, text="Iconn Manager", font=("Arial", 22, "bold"),
+                           fg="#c5a5ff", bg="#171329").pack(pady=18)
+                  tk.Label(root, text="Change your Quantum Linux boot logo",
+                           fg="white", bg="#171329").pack()
                   self.preview = tk.Label(root, bg="#241d3d")
                   self.preview.pack(pady=20, ipadx=35, ipady=25)
-
-                  tk.Button(
-                      root, text="Choose Image",
-                      command=self.choose, width=24
-                  ).pack(pady=6)
-
-                  tk.Button(
-                      root, text="Apply Boot Logo",
-                      command=self.apply, width=24
-                  ).pack(pady=6)
-
-                  tk.Button(
-                      root, text="Restore Default Logo",
-                      command=self.restore, width=24
-                  ).pack(pady=6)
-
+                  tk.Button(root, text="Choose Image", command=self.choose, width=24).pack(pady=6)
+                  tk.Button(root, text="Apply Boot Logo", command=self.apply, width=24).pack(pady=6)
+                  tk.Button(root, text="Restore Default Logo", command=self.restore, width=24).pack(pady=6)
                   self.path = None
                   self.image = None
 
               def choose(self):
-                  path = filedialog.askopenfilename(
-                      filetypes=[
-                          ("Supported images", "*.png *.jpg *.jpeg *.bmp *.webp *.gif *.tif *.tiff"),
-                          ("All files", "*.*")
-                      ]
-                  )
+                  path = filedialog.askopenfilename(filetypes=[
+                      ("Supported images", "*.png *.jpg *.jpeg *.bmp *.webp *.gif *.tif *.tiff"),
+                      ("All files", "*.*")])
                   if not path:
                       return
-
                   try:
                       image = Image.open(path).convert("RGBA")
                       image.thumbnail((180, 180))
-                      self.image = image
-                      self.path = path
+                      self.image, self.path = image, path
                       preview = ImageTk.PhotoImage(image)
                       self.preview.configure(image=preview)
                       self.preview.image = preview
@@ -224,18 +205,13 @@ jobs:
                       messagebox.showerror("Image error", str(error))
 
               def privileged(self, source):
-                  script = (
-                      "install -m 644 "
-                      + "'" + source.replace("'", "'\\''") + "' "
-                      + "'" + TARGET + "' && "
-                      + "update-initramfs -u -k all"
-                  )
+                  quoted_source = "'" + source.replace("'", "'\\''") + "'"
+                  quoted_target = "'" + TARGET + "'"
+                  script = f"install -m 644 {quoted_source} {quoted_target} && update-initramfs -u -k all"
                   result = subprocess.run(["pkexec", "sh", "-c", script])
                   if result.returncode == 0:
-                      messagebox.showinfo(
-                          "Iconn Manager",
-                          "Boot logo updated. The boot animation was not changed."
-                      )
+                      messagebox.showinfo("Iconn Manager",
+                          "Boot logo updated. The boot animation was not changed.")
 
               def apply(self):
                   if self.image is None:
@@ -247,9 +223,7 @@ jobs:
 
               def restore(self):
                   if not os.path.exists(DEFAULT):
-                      messagebox.showerror(
-                          "Iconn Manager", "Default logo backup is missing."
-                      )
+                      messagebox.showerror("Iconn Manager", "Default logo backup is missing.")
                       return
                   self.privileged(DEFAULT)
 
