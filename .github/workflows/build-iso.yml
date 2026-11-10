@@ -115,7 +115,7 @@ jobs:
           set -euo pipefail
           # Do not use 'noauto' here. It would bypass auto/config and silently
           # discard the repository's authoritative build settings.
-          sudo lb config
+          sudo sh ./auto/config
           echo "Generated live-build configuration:"
           sudo grep -R -n -E 'LB_(DISTRIBUTION|ARCHITECTURES|INITSYSTEM|BINARY_IMAGES)=' config
           sudo grep -R -q -E 'LB_INITSYSTEM="?systemd"?' config
