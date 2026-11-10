@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - fix/kde-auto-config-run13
     paths:
       - "auto/**"
       - "config/**"
