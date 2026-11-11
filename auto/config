@@ -2,7 +2,9 @@
 set -eu
 
 # Single source of truth for the Debian 13 live image.
-# Keep the workflow invoking plain "lb config" so this file is executed.
+# Debian 13 uses the trixie-security suite. The Ubuntu runner's live-build
+# generates the obsolete trixie/updates suite when --security is enabled,
+# so the current security repository is supplied through config/archives.
 lb config noauto \
   --mode debian \
   --distribution trixie \
@@ -15,7 +17,7 @@ lb config noauto \
   --mirror-binary https://deb.debian.org/debian/ \
   --apt-recommends false \
   --apt-options "--yes -oAcquire::Retries=5 -oAcquire::http::Timeout=30" \
-  --security true \
+  --security false \
   --iso-application "Quantum Linux" \
   --iso-volume "QUANTUM_LINUX" \
   --bootappend-live "boot=live components quiet splash"
